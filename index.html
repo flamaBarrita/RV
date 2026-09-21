@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Realidad Aumentada - 3 Órbitas, Color y Opacidad</title>
+    <title>AR Espacial - Proyecto de Mario</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 
     <!-- A-Frame -->
@@ -10,118 +10,117 @@
     <!-- AR.js para A-Frame -->
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.7/aframe/build/aframe-ar.js"></script>
 
-    <style>
-      .arjs-loader {
-        height: 100%;
-        width: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
-        background-color: rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      .arjs-loader div {
-        text-align: center;
-        font-size: 1.25em;
-        color: white;
-        font-family: sans-serif;
-      }
-    </style>
-
-    <!-- Componente customizado para forzar color y opacidad en archivos .glb -->
+    <!-- Componente para activar la órbita y la música al tocar -->
     <script>
-      AFRAME.registerComponent("modificar-material", {
-        schema: {
-          color: { type: "color", default: "#ffffff" },
-          opacidad: { type: "number", default: 1.0 }
-        },
+      AFRAME.registerComponent('activar-interaccion', {
         init: function () {
-          this.el.addEventListener("model-loaded", () => {
-            const obj = this.el.getObject3D("mesh");
-            if (!obj) return;
+          // Buscamos la etiqueta de audio en el HTML
+          const audio = document.querySelector("#musica-espacio");
+          // Identificamos el contenedor padre (el que se encarga de la órbita)
+          const contenedorPadre = this.el.parentNode;
+
+          // Evento que escucha cuando el usuario toca el modelo 3D
+          this.el.addEventListener('click', () => {
+            // 1. Reproducir la música si no está sonando
+            if (audio.paused) {
+              audio.play();
+            }
             
-            obj.traverse((node) => {
-              if (node.isMesh && node.material) {
-                // Tiñe el material del GLB
-                node.material.color.set(this.data.color);
-                
-                // Aplica opacidad si es menor a 1
-                if (this.data.opacidad < 1.0) {
-                  node.material.transparent = true;
-                  node.material.opacity = this.data.opacidad;
-                  node.material.depthWrite = false;
-                }
-                
-                // Fuerza a Three.js a actualizar el material
-                node.material.needsUpdate = true;
-              }
-            });
+            // 2. Avisarle al contenedor padre que inicie la animación de rotación (órbita)
+            contenedorPadre.emit('empezar-orbita');
           });
         }
       });
     </script>
+
+    <style>
+      .instrucciones {
+        position: absolute;
+        bottom: 20px;
+        width: 100%;
+        text-align: center;
+        z-index: 1000;
+        color: white;
+        font-family: sans-serif;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px #000000;
+        pointer-events: none; /* Evita que el texto bloquee los toques a la pantalla */
+      }
+    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden">
-    <!-- Pantalla de carga -->
-    <div class="arjs-loader">
-      <div>Cargando AR...</div>
-    </div>
+    
+    <!-- Texto flotante en pantalla -->
+    <div class="instrucciones">Toca una nave o luna para iniciar la exploración y la música</div>
 
+    <!-- Archivo de Audio (Debe estar en tu carpeta) -->
+    <audio id="musica-espacio" src="musica.mp3" preload="auto"></audio>
+
+    <!-- 
+      Añadimos:
+      - cursor="rayOrigin: mouse" para que los toques en la pantalla funcionen como clics.
+      - raycaster="objects: .interactivo" para que el sistema solo busque clics en los modelos, mejorando el rendimiento.
+      - colorManagement: true para que las texturas originales se vean con colores vivos.
+    -->
     <a-scene
       vr-mode-ui="enabled: false"
-      renderer="logarithmicDepthBuffer: true;"
+      renderer="logarithmicDepthBuffer: true; colorManagement: true;"
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;"
+      cursor="rayOrigin: mouse"
+      raycaster="objects: .interactivo"
     >
-      <!-- Asegúrate de tener estos 3 modelos en tu carpeta -->
+      <!-- Carga de los modelos 3D espaciales -->
       <a-assets>
-        <a-asset-item id="modelo1" src="modelo1.glb"></a-asset-item>
-        <a-asset-item id="modelo2" src="modelo2.glb"></a-asset-item>
-        <a-asset-item id="modelo3" src="modelo3.glb"></a-asset-item>
+        <a-asset-item id="nave1" src="modelo1.glb"></a-asset-item>
+        <a-asset-item id="luna" src="modelo2.glb"></a-asset-item>
+        <a-asset-item id="nave2" src="modelo3.glb"></a-asset-item>
       </a-assets>
 
       <a-marker preset="kanji">
         
         <!-- ==========================================
-             1. ANIMACIÓN EN EJE X (Órbita Vertical)
+             1. EJE X (Órbita de la Nave 1)
              ========================================== -->
-        <a-entity animation="property: rotation; to: 360 0 0; loop: true; dur: 4000; easing: linear">
-          <!-- El modelo está desplazado (position Y=0.8) para que orbite alrededor del centro -->
+        <!-- La animación de órbita está pausada hasta recibir el evento 'empezar-orbita' -->
+        <a-entity animation="property: rotation; to: 360 0 0; loop: true; dur: 4000; easing: linear; startEvents: empezar-orbita">
+          <!-- El modelo en sí tiene un movimiento de flote y la clase interactivo -->
           <a-entity
-            gltf-model="#modelo1"
+            class="interactivo"
+            gltf-model="#nave1"
             position="0 0.8 0"
             scale="0.3 0.3 0.3"
-            modificar-material="color: #ff3333; opacidad: 0.8"
+            activar-interaccion
+            animation="property: position; dir: alternate; dur: 2000; to: 0 0.9 0; loop: true; easing: easeInOutSine"
           ></a-entity>
         </a-entity>
 
         <!-- ==========================================
-             2. ANIMACIÓN EN EJE Y (Órbita Horizontal)
+             2. EJE Y (Órbita de la Luna)
              ========================================== -->
-        <a-entity animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear">
-          <!-- El modelo está desplazado (position X=0.8) -->
+        <a-entity animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear; startEvents: empezar-orbita">
           <a-entity
-            gltf-model="#modelo2"
+            class="interactivo"
+            gltf-model="#luna"
             position="0.8 0 0"
             scale="0.3 0.3 0.3"
-            modificar-material="color: #33ff33; opacidad: 0.5"
+            activar-interaccion
+            animation="property: position; dir: alternate; dur: 2500; to: 0.8 0.1 0; loop: true; easing: easeInOutSine"
           ></a-entity>
         </a-entity>
 
         <!-- ==========================================
-             3. ANIMACIÓN EN EJE Z (Órbita Frontal)
+             3. EJE Z (Órbita de la Nave 2)
              ========================================== -->
-        <a-entity animation="property: rotation; to: 0 0 360; loop: true; dur: 6000; easing: linear">
-          <!-- El modelo está desplazado (position X y Y) -->
+        <a-entity animation="property: rotation; to: 0 0 360; loop: true; dur: 6000; easing: linear; startEvents: empezar-orbita">
           <a-entity
-            gltf-model="#modelo3"
+            class="interactivo"
+            gltf-model="#nave2"
             position="0.6 0.6 0"
             scale="0.3 0.3 0.3"
-            modificar-material="color: #3333ff; opacidad: 0.6"
+            activar-interaccion
+            animation="property: position; dir: alternate; dur: 2200; to: 0.6 0.7 0; loop: true; easing: easeInOutSine"
           ></a-entity>
         </a-entity>
 
@@ -129,13 +128,5 @@
 
       <a-entity camera></a-entity>
     </a-scene>
-
-    <script>
-      // Quitar la pantalla de carga cuando todo esté listo
-      window.addEventListener("load", () => {
-        const loader = document.querySelector(".arjs-loader");
-        if (loader) loader.remove();
-      });
-    </script>
   </body>
 </html>
