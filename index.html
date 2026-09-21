@@ -2,96 +2,100 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>AR sin Marcadores - Nave en el Cielo</title>
+    <title>AR Estática - Nave Espacial</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1" />
 
-    <!-- Solo A-Frame (Eliminamos AR.js) -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
     <style>
-      body, html { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; }
+      body, html { 
+        margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; 
+        background-color: black; 
+      }
       
-      /* Video que mostrará la cámara del celular en el fondo */
       #fondo-camara {
         position: absolute;
         top: 0; left: 0; width: 100vw; height: 100vh;
-        object-fit: cover; /* Asegura que la cámara llene toda la pantalla sin distorsionarse */
-        z-index: -1;
+        object-fit: cover;
+        z-index: 0;
       }
 
-      /* Interfaz HUD */
-      .hud-instrucciones {
+      .a-canvas {
+        background: transparent !important;
+        z-index: 1 !important;
+      }
+
+      #btn-reiniciar {
         position: absolute;
-        bottom: 40px;
+        bottom: 30px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(10, 15, 30, 0.8);
-        border: 1px solid #00ffcc;
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        color: white;
+        padding: 8px 20px;
         border-radius: 20px;
-        padding: 12px 24px;
-        color: #fff;
         font-family: sans-serif;
         font-size: 14px;
-        text-align: center;
-        box-shadow: 0 0 15px rgba(0, 255, 204, 0.4);
-        z-index: 1000;
-        pointer-events: none;
-        transition: opacity 1s ease-out, background 0.3s;
-        width: 80%;
+        cursor: pointer;
+        z-index: 10;
+        backdrop-filter: blur(5px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      }
+      #btn-reiniciar:active {
+        background: rgba(255, 255, 255, 0.4);
       }
     </style>
 
-    <!-- Script para encender la cámara trasera del dispositivo -->
     <script>
+      // Activar la cámara de fondo independientemente de A-Frame
       window.addEventListener("load", () => {
         const video = document.getElementById('fondo-camara');
-        // Solicitamos acceso a la cámara trasera
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then((stream) => {
-            video.srcObject = stream;
-          })
-          .catch((err) => {
-            console.error("Error al acceder a la cámara:", err);
-            alert("Por favor, permite el acceso a la cámara para ver la experiencia.");
-          });
+          .then((stream) => { video.srcObject = stream; })
+          .catch((err) => { console.error("Error de cámara:", err); });
       });
 
-      // Componente para la interacción con la nave
       AFRAME.registerComponent('nave-interactiva', {
         init: function () {
           const audio = document.querySelector("#musica-espacio");
-          const hud = document.querySelector(".hud-instrucciones");
 
           this.el.addEventListener('click', () => {
-            // Reproducir música
-            if (audio.paused) { audio.play(); }
-            
-            // Emitir evento para iniciar la animación de rotación y avance
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log("El navegador bloqueó el audio", e));
             this.el.emit('activar-hiperimpulsor');
-
-            // Actualizar interfaz
-            if(hud && hud.style.opacity !== "0") {
-              hud.innerHTML = "¡Hiperimpulsor Activado! 🚀";
-              hud.style.background = "rgba(0, 200, 100, 0.9)";
-              hud.style.borderColor = "#00ff66";
-              setTimeout(() => { hud.style.opacity = "0"; }, 3000);
-            }
           });
         }
       });
+
+      function reiniciarEscena() {
+        const nave = document.querySelector("#mi-nave");
+        const audio = document.querySelector("#musica-espacio");
+
+        audio.pause();
+        audio.currentTime = 0;
+
+        nave.removeAttribute('animation__giro');
+        nave.removeAttribute('animation__escape');
+
+        // Regresar la nave al centro de la pantalla
+        nave.setAttribute('position', '0 0 -6');
+        nave.setAttribute('rotation', '0 0 0');
+
+        setTimeout(() => {
+          nave.setAttribute('animation__giro', 'property: rotation; by: 360 720 0; dur: 1500; startEvents: activar-hiperimpulsor; easing: easeOutQuad');
+          nave.setAttribute('animation__escape', 'property: position; to: 0 50 -100; dur: 2500; startEvents: activar-hiperimpulsor; easing: easeInCubic');
+        }, 50);
+      }
     </script>
   </head>
 
   <body>
     
-    <!-- Elemento de video para el fondo (Cámara real) -->
     <video id="fondo-camara" autoplay playsinline></video>
+    <button id="btn-reiniciar" onclick="reiniciarEscena()">Reiniciar</button>
+    <audio id="musica-espacio" src="cancion-espacial.mp3" preload="auto"></audio>
 
-    <div class="hud-instrucciones">Apunta tu teléfono hacia el cielo y busca la nave</div>
-
-    <audio id="musica-espacio" src="musica.mp3" preload="auto"></audio>
-
-    <!-- Escena A-Frame. 'alpha: true' hace que el fondo sea transparente para ver el video -->
     <a-scene
       renderer="alpha: true; logarithmicDepthBuffer: true; colorManagement: true;"
       cursor="rayOrigin: mouse"
@@ -99,39 +103,27 @@
       vr-mode-ui="enabled: false"
     >
       
-      <!-- Luces -->
-      <a-light type="ambient" color="#ffffff" intensity="0.7"></a-light>
-      <a-light type="directional" color="#e8f4ff" intensity="1" position="1 3 2"></a-light>
+      <a-light type="ambient" color="#ffffff" intensity="0.8"></a-light>
+      <a-light type="directional" color="#ffffff" intensity="1" position="1 3 2"></a-light>
 
       <a-assets>
-        <!-- Solo cargaremos una nave principal para enfocar la experiencia -->
-        <a-asset-item id="nave1" src="Swift.glb"></a-asset-item>
+        <a-asset-item id="nave1" src="nave1.glb"></a-asset-item>
       </a-assets>
 
-      <!-- 
-        Nave ubicada en el cielo:
-        Y = 15 (altura), Z = -15 (distancia hacia el frente). 
-        El usuario tendrá que mirar a un ángulo de 45 grados hacia arriba para verla.
-      -->
       <a-entity
+        id="mi-nave"
         class="interactivo"
         gltf-model="#nave1"
-        position="0 15 -15"
-        scale="0.05 0.05 0.05"
+        position="0 0 -6"
+        scale="0.15 0.15 0.15"
         nave-interactiva
-        
-        /* Animación 1: Flote suave constante */
-        animation__flote="property: position; dir: alternate; dur: 3000; to: 0 16 -15; loop: true; easing: easeInOutSine"
-        
-        /* Animación 2: Giro rápido (Barrel Roll) al hacer click */
+        animation__flote="property: position; dir: alternate; dur: 2000; to: 0 0.5 -6; loop: true; easing: easeInOutSine"
         animation__giro="property: rotation; by: 360 720 0; dur: 1500; startEvents: activar-hiperimpulsor; easing: easeOutQuad"
-        
-        /* Animación 3: La nave se aleja rápidamente hacia el espacio al hacer click */
-        animation__escape="property: position; to: 0 50 -100; dur: 2500; startEvents: activar-hiperimpulsor; easing: easeInCubic; delay: 500"
+        animation__escape="property: position; to: 0 50 -100; dur: 2500; startEvents: activar-hiperimpulsor; easing: easeInCubic"
       ></a-entity>
 
-      <!-- Cámara del usuario controlada por el giroscopio del teléfono -->
-      <a-entity camera look-controls position="0 1.6 0"></a-entity>
+      <!-- Cámara estática pura, sin 'look-controls' que acceda a sensores -->
+      <a-entity camera position="0 0 0"></a-entity>
       
     </a-scene>
 
