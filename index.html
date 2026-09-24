@@ -105,6 +105,13 @@
           }
           this.fase = 'despegue';
           this.t = 0;
+          this.onda('#7fe3ff');
+        },
+
+        onda: function (color) {
+          const onda = document.querySelector('#onda');
+          onda.setAttribute('material', 'color', color);
+          onda.emit('pulso');
         },
 
         tick: function (tiempo, dt) {
@@ -126,6 +133,7 @@
               o.visible = false;
               this.fase = 'regreso';
               this.t = 0;
+              this.onda('#c89bff');
             }
           }
 
@@ -217,6 +225,10 @@
             <a-sphere id="zona-toque" class="interactivo" radius="1.3"
                       material="opacity: 0; transparent: true; depthWrite: false"></a-sphere>
           </a-entity>
+          <a-ring id="onda" radius-inner="0.9" radius-outer="1" scale="0.001 0.001 0.001"
+                  material="shader: flat; color: #7fe3ff; transparent: true; opacity: 0; side: double"
+                  animation__crece="property: scale; from: 0.3 0.3 0.3; to: 3 3 3; dur: 800; easing: easeOutCubic; startEvents: pulso"
+                  animation__desvanece="property: components.material.material.opacity; from: 0.9; to: 0; dur: 800; easing: easeOutQuad; startEvents: pulso"></a-ring>
         </a-entity>
       </a-entity>
 
