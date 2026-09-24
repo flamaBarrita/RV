@@ -8,11 +8,13 @@
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
     <style>
-      body, html { 
-        margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; 
-        background-color: black; 
+      body, html {
+        margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%;
+        background-color: black;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-tap-highlight-color: transparent;
       }
-      
+
       #fondo-camara {
         position: absolute;
         top: 0; left: 0; width: 100vw; height: 100vh;
@@ -25,9 +27,52 @@
         z-index: 1 !important;
       }
 
+      /* Indicador "toca la nave" */
+      #pista {
+        position: absolute;
+        top: max(24px, env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        padding: 10px 20px;
+        border-radius: 999px;
+        background: rgba(10, 20, 40, 0.45);
+        border: 1px solid rgba(120, 220, 255, 0.5);
+        color: #e6f7ff;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        box-shadow: 0 0 18px rgba(80, 200, 255, 0.35);
+        pointer-events: none;
+        transition: opacity 0.6s ease, transform 0.6s ease;
+        animation: latido 1.8s ease-in-out infinite;
+      }
+      #pista.oculta {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-12px);
+      }
+      @keyframes latido {
+        0%, 100% { box-shadow: 0 0 12px rgba(80, 200, 255, 0.25); }
+        50%      { box-shadow: 0 0 26px rgba(80, 200, 255, 0.6); }
+      }
+
+      /* Destello de pantalla al saltar al hiperespacio */
+      #destello {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        background: radial-gradient(circle at center, rgba(160, 230, 255, 0.55), rgba(160, 230, 255, 0) 60%);
+        opacity: 0;
+        transition: opacity 0.35s ease-out;
+      }
+      #destello.activo { opacity: 1; transition: opacity 0.08s ease-in; }
+
       #btn-reiniciar {
         position: absolute;
-        bottom: 30px;
+        bottom: max(30px, env(safe-area-inset-bottom));
         left: 50%;
         transform: translateX(-50%);
         background: rgba(255, 255, 255, 0.2);
@@ -35,11 +80,11 @@
         color: white;
         padding: 8px 20px;
         border-radius: 20px;
-        font-family: sans-serif;
         font-size: 14px;
         cursor: pointer;
         z-index: 10;
         backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
       }
       #btn-reiniciar:active {
@@ -56,15 +101,193 @@
           .catch((err) => { console.error("Error de cámara:", err); });
       });
 
+      // ---------- Utilidades ----------
+      const DISTANCIA = 6;          // metros entre la cámara y la nave
+      const FOV = 80;               // campo de visión por defecto de A-Frame
+
+      const suavizar = {
+        entradaCubica: (t) => t * t * t,
+        salidaCubica: (t) => 1 - Math.pow(1 - t, 3),
+        entradaSalida: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+        salidaRebote: (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+      };
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const limitar = (t) => Math.min(Math.max(t, 0), 1);
+
+      // Fade de volumen (en iOS el volumen es de solo lectura, simplemente suena)
+      function fundirAudio(audio, destino, ms, alTerminar) {
+        clearInterval(audio._fundido);
+        const inicio = audio.volume;
+        const t0 = performance.now();
+        audio._fundido = setInterval(() => {
+          const t = limitar((performance.now() - t0) / ms);
+          audio.volume = lerp(inicio, destino, t);
+          if (t >= 1) { clearInterval(audio._fundido); if (alTerminar) alTerminar(); }
+        }, 30);
+      }
+
+      // ---------- Ajuste de tamaño: la nave siempre cabe en pantalla ----------
+      AFRAME.registerComponent('ajustar-tamano', {
+        init: function () {
+          this.caja = null;
+          this.ajustar = this.ajustar.bind(this);
+          this.el.addEventListener('model-loaded', () => {
+            const modelo = this.el.getObject3D('mesh');
+            modelo.position.set(0, 0, 0);
+            modelo.scale.set(1, 1, 1);
+            modelo.updateMatrixWorld(true);
+            this.caja = new THREE.Box3().setFromObject(modelo);
+            // Centrar el modelo en su propio origen
+            const centro = this.caja.getCenter(new THREE.Vector3());
+            modelo.position.sub(centro);
+            this.ajustar();
+          });
+          window.addEventListener('resize', this.ajustar);
+        },
+        remove: function () { window.removeEventListener('resize', this.ajustar); },
+        ajustar: function () {
+          if (!this.caja) return;
+          const tam = this.caja.getSize(new THREE.Vector3());
+          const altoVisible = 2 * DISTANCIA * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+          const anchoVisible = altoVisible * (window.innerWidth / window.innerHeight);
+          // La nave ocupa como máximo el 55% del ancho y el 35% del alto visibles
+          const escala = Math.min((anchoVisible * 0.55) / tam.x, (altoVisible * 0.35) / tam.y);
+          this.el.object3D.scale.setScalar(escala);
+
+          // Ajustar zona táctil y plataforma al nuevo tamaño
+          const radio = Math.max(tam.x, tam.y, tam.z) * escala * 0.55;
+          const zona = document.querySelector('#zona-toque');
+          zona.setAttribute('radius', radio);
+          const base = document.querySelector('#plataforma');
+          base.object3D.position.y = -(tam.y * escala) / 2 - 0.35;
+          base.object3D.scale.setScalar(radio * 0.9);
+        }
+      });
+
+      // ---------- Nave interactiva ----------
       AFRAME.registerComponent('nave-interactiva', {
         init: function () {
-          const audio = document.querySelector("#musica-espacio");
+          this.audio = document.querySelector("#musica-espacio");
+          this.onda = document.querySelector("#onda");
+          this.plataforma = document.querySelector("#plataforma");
+          this.destello = document.querySelector("#destello");
+          this.pista = document.querySelector("#pista");
+          this.reiniciar();
 
-          this.el.addEventListener('click', () => {
-            audio.currentTime = 0;
-            audio.play().catch(e => console.log("El navegador bloqueó el audio", e));
-            this.el.emit('activar-hiperimpulsor');
-          });
+          const alTocar = () => this.lanzar();
+          this.el.addEventListener('click', alTocar);
+        },
+
+        reiniciar: function () {
+          this.fase = 'reposo';
+          this.tiempoFase = 0;
+          this.giroReposo = 0;
+          const o = this.el.object3D;
+          o.position.set(0, 0, 0);
+          o.rotation.set(0, 0, 0);
+          o.scale.setScalar(1);
+          o.visible = true;
+          this.plataforma.object3D.visible = true;
+        },
+
+        lanzar: function () {
+          if (this.fase !== 'reposo') return; // no interrumpir la secuencia
+          this.pista.classList.add('oculta');
+
+          // Sonido: arranca con fundido si no estaba sonando
+          if (this.audio.paused) {
+            this.audio.currentTime = 0;
+            this.audio.volume = 0;
+            this.audio.play().catch(e => console.log("El navegador bloqueó el audio", e));
+          }
+          fundirAudio(this.audio, 1, 600);
+
+          this.cambiarFase('carga');
+          this.lanzarOnda('#7fe3ff');
+        },
+
+        lanzarOnda: function (color) {
+          this.onda.setAttribute('material', 'color', color);
+          this.onda.emit('pulso');
+        },
+
+        cambiarFase: function (fase) {
+          this.fase = fase;
+          this.tiempoFase = 0;
+        },
+
+        tick: function (t, dt) {
+          if (!dt) return;
+          dt = Math.min(dt, 50);
+          this.tiempoFase += dt;
+          const o = this.el.object3D;
+          const ms = this.tiempoFase;
+
+          switch (this.fase) {
+            case 'reposo': {
+              // Giro lento tipo vitrina
+              this.giroReposo += dt * 0.0004;
+              o.rotation.set(Math.sin(t * 0.0012) * 0.08, this.giroReposo, Math.sin(t * 0.0009) * 0.06);
+              break;
+            }
+
+            case 'carga': { // 0.7 s: vibra y se "infla" acumulando energía
+              const DUR = 700;
+              const p = limitar(ms / DUR);
+              const vib = 0.05 * p;
+              o.position.set((Math.random() - 0.5) * vib, (Math.random() - 0.5) * vib, 0);
+              o.scale.setScalar(1 + 0.15 * Math.sin(p * Math.PI));
+              o.rotation.y = this.giroReposo + suavizar.entradaSalida(p) * 0.4;
+              if (p >= 1) {
+                this.inicioRotY = o.rotation.y;
+                this.cambiarFase('despegue');
+              }
+              break;
+            }
+
+            case 'despegue': { // 1.5 s: tonel + salida hacia el fondo
+              const DUR = 1500;
+              const p = limitar(ms / DUR);
+              const e = suavizar.entradaCubica(p);
+              o.position.set(Math.sin(p * Math.PI) * 1.2, lerp(0, 3, e), lerp(0, -40, e));
+              o.rotation.set(-0.35 * e, this.inicioRotY + e * Math.PI * 2, e * Math.PI * 4);
+              o.scale.setScalar(lerp(1, 0.6, e));
+              this.plataforma.object3D.visible = p < 0.3;
+              if (p >= 1) {
+                o.visible = false;
+                this.cambiarFase('hiperespacio');
+              }
+              break;
+            }
+
+            case 'hiperespacio': { // 0.5 s fuera de vista + destello
+              if (ms > 350 && !this.destello.classList.contains('activo')) {
+                this.destello.classList.add('activo');
+                setTimeout(() => this.destello.classList.remove('activo'), 120);
+              }
+              if (ms >= 500) {
+                o.position.set(0, 0, 0);
+                o.visible = true;
+                this.plataforma.object3D.visible = true;
+                this.lanzarOnda('#c89bff');
+                this.cambiarFase('regreso');
+              }
+              break;
+            }
+
+            case 'regreso': { // 1.3 s: reaparece girando con rebote
+              const DUR = 1300;
+              const p = limitar(ms / DUR);
+              o.scale.setScalar(Math.max(0.001, suavizar.salidaRebote(p)));
+              o.rotation.set(0, (1 - suavizar.salidaCubica(p)) * Math.PI * 4, 0);
+              if (p >= 1) {
+                o.scale.setScalar(1);
+                this.giroReposo = 0;
+                this.cambiarFase('reposo');
+              }
+              break;
+            }
+          }
         }
       });
 
@@ -72,59 +295,72 @@
         const nave = document.querySelector("#mi-nave");
         const audio = document.querySelector("#musica-espacio");
 
-        audio.pause();
-        audio.currentTime = 0;
-
-        nave.removeAttribute('animation__giro');
-        nave.removeAttribute('animation__escape');
-
-        // Regresar la nave al centro de la pantalla
-        nave.setAttribute('position', '0 0 -6');
-        nave.setAttribute('rotation', '0 0 0');
-
-        setTimeout(() => {
-          nave.setAttribute('animation__giro', 'property: rotation; by: 360 720 0; dur: 1500; startEvents: activar-hiperimpulsor; easing: easeOutQuad');
-          nave.setAttribute('animation__escape', 'property: position; to: 0 50 -100; dur: 2500; startEvents: activar-hiperimpulsor; easing: easeInCubic');
-        }, 50);
+        fundirAudio(audio, 0, 400, () => { audio.pause(); audio.currentTime = 0; });
+        nave.components['nave-interactiva'].reiniciar();
+        document.querySelector('#pista').classList.remove('oculta');
       }
     </script>
   </head>
 
   <body>
-    
-    <video id="fondo-camara" autoplay playsinline></video>
+
+    <video id="fondo-camara" autoplay playsinline muted></video>
+    <div id="destello"></div>
+    <div id="pista">✨ Toca la nave para despegar</div>
     <button id="btn-reiniciar" onclick="reiniciarEscena()">Reiniciar</button>
-    <audio id="musica-espacio" src="musica.mp3" preload="auto"></audio>
+    <audio id="musica-espacio" src="musica.mp3" preload="auto" loop></audio>
 
     <a-scene
-      renderer="alpha: true; logarithmicDepthBuffer: true; colorManagement: true;"
+      renderer="alpha: true; antialias: true; logarithmicDepthBuffer: true; colorManagement: true;"
       cursor="rayOrigin: mouse"
       raycaster="objects: .interactivo"
       vr-mode-ui="enabled: false"
     >
-      
+
       <a-light type="ambient" color="#ffffff" intensity="0.8"></a-light>
       <a-light type="directional" color="#ffffff" intensity="1" position="1 3 2"></a-light>
+      <a-light type="point" color="#6fd8ff" intensity="0.8" distance="12" position="-2 1 -3"></a-light>
+      <a-light type="point" color="#b98cff" intensity="0.6" distance="12" position="2 -1 -3"></a-light>
 
       <a-assets>
         <a-asset-item id="nave1" src="Swift.glb"></a-asset-item>
       </a-assets>
 
-      <a-entity
-        id="mi-nave"
-        class="interactivo"
-        gltf-model="#nave1"
-        position="0 0 -6"
-        scale="0.15 0.15 0.15"
-        nave-interactiva
-        animation__flote="property: position; dir: alternate; dur: 2000; to: 0 0.5 -6; loop: true; easing: easeInOutSine"
-        animation__giro="property: rotation; by: 360 720 0; dur: 1500; startEvents: activar-hiperimpulsor; easing: easeOutQuad"
-        animation__escape="property: position; to: 0 50 -100; dur: 2500; startEvents: activar-hiperimpulsor; easing: easeInCubic"
-      ></a-entity>
+      <!-- Ancla fija frente a la cámara -->
+      <a-entity id="ancla" position="0 0 -6">
+
+        <!-- Flotación suave (separada para no chocar con la animación del clic) -->
+        <a-entity animation__flote="property: position; from: 0 -0.12 0; to: 0 0.12 0; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
+
+          <!-- Nave: recibe el clic y ejecuta la secuencia -->
+          <a-entity id="mi-nave" nave-interactiva>
+            <a-entity gltf-model="#nave1" ajustar-tamano></a-entity>
+            <!-- Zona táctil invisible, más fácil de tocar en el celular -->
+            <a-sphere id="zona-toque" class="interactivo" radius="1.3"
+                      material="opacity: 0; transparent: true; depthWrite: false"></a-sphere>
+          </a-entity>
+
+          <!-- Onda expansiva al tocar -->
+          <a-ring id="onda" radius-inner="0.9" radius-outer="1" scale="0.001 0.001 0.001"
+                  material="shader: flat; color: #7fe3ff; transparent: true; opacity: 0; side: double"
+                  animation__crece="property: scale; from: 0.3 0.3 0.3; to: 3 3 3; dur: 800; easing: easeOutCubic; startEvents: pulso"
+                  animation__desvanece="property: components.material.material.opacity; from: 0.9; to: 0; dur: 800; easing: easeOutQuad; startEvents: pulso"></a-ring>
+        </a-entity>
+
+        <!-- Plataforma luminosa bajo la nave -->
+        <a-entity id="plataforma" position="0 -1.3 0">
+          <a-ring rotation="-90 0 0" radius-inner="0.75" radius-outer="1"
+                  material="shader: flat; color: #6fd8ff; transparent: true; opacity: 0.55; side: double"
+                  animation__pulso="property: components.material.material.opacity; from: 0.25; to: 0.7; dir: alternate; dur: 1400; loop: true; easing: easeInOutSine"></a-ring>
+          <a-ring rotation="-90 0 0" radius-inner="0.45" radius-outer="0.5"
+                  material="shader: flat; color: #b98cff; transparent: true; opacity: 0.6; side: double"
+                  animation__giro="property: rotation; from: -90 0 0; to: -90 0 360; dur: 6000; loop: true; easing: linear"></a-ring>
+        </a-entity>
+      </a-entity>
 
       <!-- Cámara estática pura, sin 'look-controls' que acceda a sensores -->
       <a-entity camera position="0 0 0"></a-entity>
-      
+
     </a-scene>
 
   </body>
